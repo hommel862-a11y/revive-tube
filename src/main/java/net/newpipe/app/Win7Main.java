@@ -19,18 +19,19 @@ import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintWriter;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -63,13 +64,9 @@ import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
-import javax.swing.JMenu;
-import javax.swing.JMenuBar;
-import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.KeyStroke;
 import javax.swing.ListCellRenderer;
@@ -89,6 +86,7 @@ import org.schabi.newpipe.extractor.ServiceList;
 import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
+import org.schabi.newpipe.extractor.kiosk.KioskExtractor;
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler;
 import org.schabi.newpipe.extractor.search.SearchInfo;
@@ -96,7 +94,6 @@ import org.schabi.newpipe.extractor.stream.AudioStream;
 import org.schabi.newpipe.extractor.stream.DeliveryMethod;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
-import org.schabi.newpipe.extractor.stream.SubtitlesStream;
 import org.schabi.newpipe.extractor.stream.VideoStream;
 
 /**
@@ -111,7 +108,7 @@ public final class Win7Main extends JFrame {
     private static final int THUMBNAIL_HEIGHT = 68;
     private static final int MAX_THUMBNAIL_BYTES = 0x200000;
     private static final int MAX_THUMBNAIL_CACHE_SIZE = 50;
-    private static final int DEFAULT_VIDEO_HEIGHT = 360; // 360p por defecto para Atom N455 / Canaima
+    private static final int DEFAULT_VIDEO_HEIGHT = 360; // 360p ideal para Atom N455 / Canaima
     private static final Pattern HEIGHT_PATTERN = Pattern.compile("(?:^|x)([0-9]{3,4})(?:p(?:[0-9]+)?|$)");
     private static final Pattern YOUTUBE_VIDEO_ID_PATTERN = Pattern.compile("(?:youtu\\.be/|/shorts/|/embed/|[?&]v=)([A-Za-z0-9_-]{11})");
     private static final String VLC_PREFERENCE_KEY = "vlc.executable";
@@ -143,17 +140,18 @@ public final class Win7Main extends JFrame {
     private final JTextField searchField = new JTextField();
     private final JButton searchButton = new ModernButton("Buscar", true);
     private final JButton loadMoreButton = new ModernButton("Cargar más videos", false);
+    private final JButton playButton = new ModernButton("▶ Reproducir", true);
     private final JButton viewChannelButton = new ModernButton("Canal", false);
     private final JButton backToResultsButton = new ModernButton("◀ Volver", false);
     private final JButton homeButton = new ModernButton("🏠 Inicio", false);
     private final JCheckBox audioOnlyCheckBox = new JCheckBox("🎧 Solo Audio");
     private final JComboBox<Integer> resolutionComboBox = new JComboBox<>();
-    private final JLabel statusLabel = new JLabel("Escribe una búsqueda para empezar.");
-    private final JLabel sectionTitle = new JLabel("RECOMENDADOS PARA TI");
+    private final JLabel statusLabel = new JLabel("Listo");
+    private final JLabel sectionTitle = new JLabel("TENDENCIAS EN YOUTUBE");
     private final JPanel channelRecommendationsPanel = new JPanel(new BorderLayout(0, 4));
     private final JPanel channelButtonsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
     private final JPanel detailsPanel = new JPanel(new BorderLayout(8, 0));
-    private final JLabel videoDetailsLabel = new JLabel("Selecciona un video");
+    private final JLabel videoDetailsLabel = new JLabel("Selecciona un video para reproducir.");
 
     private final ConcurrentHashMap<String, StreamInfo> infoCache = new ConcurrentHashMap<>();
     private final Set<String> thumbnailLoads = ConcurrentHashMap.newKeySet();
@@ -220,7 +218,7 @@ public final class Win7Main extends JFrame {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
             } catch (Exception exception) {
-                System.err.println("No se pudo cargar el tema del sistema: " + exception.getMessage());
+                System.err.println("No se pudo cargar tema nativo: " + exception.getMessage());
             }
             loadAppearancePreferences();
             configureTheme();
@@ -302,18 +300,16 @@ public final class Win7Main extends JFrame {
             }
         });
 
-        // Tamaño adaptado para pantallas de Canaima (1024x600 nativo)
         this.setMinimumSize(new Dimension(720, 480));
         this.setSize(960, 560);
         this.setLocationRelativeTo(null);
         this.getContentPane().setBackground(PAGE_COLOR);
 
-        // Header ultra compacto (38px de alto) - Gana más de 120px verticales para la pantalla 1024x600
+        // Header ultra-compacto (38px de alto)
         JPanel header = new JPanel(new BorderLayout(8, 0));
         header.setBackground(HEADER_COLOR);
         header.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
 
-        // Botones de navegación izquierda
         JPanel navLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
         navLeft.setOpaque(false);
         styleButton(this.homeButton, false);
@@ -324,7 +320,6 @@ public final class Win7Main extends JFrame {
         navLeft.add(this.homeButton);
         navLeft.add(this.backToResultsButton);
 
-        // Barra de búsqueda central
         JPanel searchBox = new JPanel(new BorderLayout(4, 0));
         searchBox.setOpaque(false);
         this.searchField.setFont(new Font("Segoe UI", Font.PLAIN, 13));
@@ -340,7 +335,6 @@ public final class Win7Main extends JFrame {
         searchBox.add(this.searchField, BorderLayout.CENTER);
         searchBox.add(this.searchButton, BorderLayout.EAST);
 
-        // Controles rápidos derecha: Solo Audio, Calidad y Ajustes
         JPanel quickControls = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         quickControls.setOpaque(false);
 
@@ -348,7 +342,7 @@ public final class Win7Main extends JFrame {
         this.audioOnlyCheckBox.setSelected(audioOnlyMode);
         this.audioOnlyCheckBox.setFont(new Font("Segoe UI", Font.BOLD, 11));
         this.audioOnlyCheckBox.setForeground(Color.WHITE);
-        this.audioOnlyCheckBox.setToolTipText("Ahorra 90% de CPU en Atom: reproduce solo el audio sin carga gráfica");
+        this.audioOnlyCheckBox.setToolTipText("Ahorra 90% de CPU en Atom: reproduce solo el audio");
         this.audioOnlyCheckBox.addActionListener(e -> {
             audioOnlyMode = this.audioOnlyCheckBox.isSelected();
             this.preferences.putBoolean(AUDIO_ONLY_PREFERENCE_KEY, audioOnlyMode);
@@ -381,7 +375,6 @@ public final class Win7Main extends JFrame {
         header.add(searchBox, BorderLayout.CENTER);
         header.add(quickControls, BorderLayout.EAST);
 
-        // Configuración de la lista de resultados
         this.resultList.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
         this.resultList.setCellRenderer(new ResultCellRenderer());
         this.resultList.setFixedCellHeight(THUMBNAIL_HEIGHT + 14);
@@ -401,6 +394,7 @@ public final class Win7Main extends JFrame {
             }
         });
         this.resultList.getInputMap().put(KeyStroke.getKeyStroke("ENTER"), "play-selected");
+        this.resultList.getInputMap().put(KeyStroke.getKeyStroke("SPACE"), "play-selected");
         this.resultList.getActionMap().put("play-selected", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent event) {
@@ -412,7 +406,6 @@ public final class Win7Main extends JFrame {
         scrollPane.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
         scrollPane.getViewport().setBackground(CARD_COLOR);
 
-        // Barra de canales recientes (chips compactos horizontales)
         this.channelRecommendationsPanel.setOpaque(false);
         this.channelButtonsPanel.setOpaque(false);
         JScrollPane channelScroll = new JScrollPane(this.channelButtonsPanel,
@@ -424,7 +417,6 @@ public final class Win7Main extends JFrame {
         this.channelRecommendationsPanel.add(channelScroll, BorderLayout.CENTER);
         this.channelRecommendationsPanel.setVisible(false);
 
-        // Cabecera de resultados
         JPanel resultsTop = new JPanel(new BorderLayout(0, 4));
         resultsTop.setOpaque(false);
         this.sectionTitle.setForeground(TEXT_COLOR);
@@ -432,7 +424,6 @@ public final class Win7Main extends JFrame {
         resultsTop.add(this.sectionTitle, BorderLayout.NORTH);
         resultsTop.add(this.channelRecommendationsPanel, BorderLayout.CENTER);
 
-        // Botón Cargar Más
         this.loadMoreButton.setVisible(false);
         styleButton(this.loadMoreButton, false);
         this.loadMoreButton.addActionListener(e -> this.loadMoreResults());
@@ -447,7 +438,7 @@ public final class Win7Main extends JFrame {
         centerPanel.add(scrollPane, BorderLayout.CENTER);
         centerPanel.add(loadMorePanel, BorderLayout.SOUTH);
 
-        // Barra inferior compacta de Detalles & Estado (solo 26px de alto)
+        // Barra inferior con botón directo ▶ Reproducir (ideal para Canaimas táctiles y clics únicos)
         this.detailsPanel.setOpaque(true);
         this.detailsPanel.setBackground(CARD_COLOR);
         this.detailsPanel.setBorder(BorderFactory.createCompoundBorder(
@@ -458,17 +449,28 @@ public final class Win7Main extends JFrame {
         this.videoDetailsLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         this.videoDetailsLabel.setForeground(MUTED_COLOR);
 
+        JPanel actionButtonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        actionButtonsPanel.setOpaque(false);
+
+        styleButton(this.playButton, true);
+        this.playButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        this.playButton.setEnabled(false);
+        this.playButton.addActionListener(e -> this.playSelected());
+
         this.viewChannelButton.setVisible(false);
         styleButton(this.viewChannelButton, false);
-        this.viewChannelButton.setFont(new Font("Segoe UI", Font.BOLD, 10));
+        this.viewChannelButton.setFont(new Font("Segoe UI", Font.BOLD, 11));
         this.viewChannelButton.addActionListener(e -> this.openSelectedChannel());
+
+        actionButtonsPanel.add(this.playButton);
+        actionButtonsPanel.add(this.viewChannelButton);
 
         this.statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         this.statusLabel.setForeground(TEXT_COLOR);
 
         this.detailsPanel.add(this.statusLabel, BorderLayout.WEST);
         this.detailsPanel.add(this.videoDetailsLabel, BorderLayout.CENTER);
-        this.detailsPanel.add(this.viewChannelButton, BorderLayout.EAST);
+        this.detailsPanel.add(actionButtonsPanel, BorderLayout.EAST);
 
         this.setLayout(new BorderLayout());
         this.add(header, BorderLayout.NORTH);
@@ -499,7 +501,7 @@ public final class Win7Main extends JFrame {
             this.statusLabel.setText("Escribe algo para buscar.");
             return;
         }
-        this.setBusy(true, "Buscando...");
+        this.setBusy(true, "Buscando en YouTube...");
         this.infoCache.clear();
         this.nextPage = null;
         this.activeSearchHandler = null;
@@ -510,8 +512,9 @@ public final class Win7Main extends JFrame {
         this.backToResultsButton.setVisible(false);
         this.channelRecommendationsPanel.setVisible(false);
         this.viewChannelButton.setVisible(false);
+        this.playButton.setEnabled(false);
         this.loadMoreButton.setVisible(false);
-        this.videoDetailsLabel.setText("Selecciona un video");
+        this.videoDetailsLabel.setText("Buscando videos...");
 
         new SwingWorker<List<StreamInfoItem>, Void>() {
             private SearchInfo searchInfo;
@@ -527,21 +530,59 @@ public final class Win7Main extends JFrame {
             @Override
             protected void done() {
                 try {
+                    List<StreamInfoItem> results = this.get();
                     Win7Main.this.activeSearchHandler = this.queryHandler;
-                    Win7Main.this.nextPage = this.searchInfo.getNextPage();
+                    Win7Main.this.nextPage = (this.searchInfo != null) ? this.searchInfo.getNextPage() : null;
                     Win7Main.this.rememberSearch(query);
                     Win7Main.this.resultModel.clear();
-                    List<StreamInfoItem> results = this.get();
                     Win7Main.this.rememberChannels(results);
                     for (StreamInfoItem item : results) {
                         Win7Main.this.resultModel.addElement(item);
                     }
                     Win7Main.this.statusLabel.setText(Win7Main.this.resultModel.isEmpty()
-                        ? "Sin resultados." : Win7Main.this.resultModel.size() + " videos. Doble clic para reproducir.");
+                        ? "Sin resultados para: " + query : Win7Main.this.resultModel.size() + " videos encontrados.");
                     Win7Main.this.sectionTitle.setText("RESULTADOS: " + query);
+                    Win7Main.this.videoDetailsLabel.setText(results.isEmpty() ? "No se encontraron videos." : "Selecciona un video de la lista.");
                     Win7Main.this.updateLoadMoreButton();
                 } catch (Exception exception) {
-                    Win7Main.this.showFailure("Fallo al buscar", exception);
+                    Win7Main.this.showFailure("Error al buscar en YouTube", exception);
+                } finally {
+                    Win7Main.this.setBusy(false, Win7Main.this.statusLabel.getText());
+                }
+            }
+        }.execute();
+    }
+
+    /**
+     * Carga videos de Tendencias en la página de inicio para que nunca esté vacía.
+     */
+    private void loadTrendingVideos() {
+        this.setBusy(true, "Cargando videos populares...");
+        this.sectionTitle.setText("TENDENCIAS EN YOUTUBE");
+        this.loadMoreButton.setVisible(false);
+
+        new SwingWorker<List<StreamInfoItem>, Void>() {
+            @Override
+            protected List<StreamInfoItem> doInBackground() throws Exception {
+                KioskExtractor kiosk = YOUTUBE.getKioskList().getDefaultKioskExtractor();
+                kiosk.fetchPage();
+                ListExtractor.InfoItemsPage<InfoItem> page = kiosk.getInitialPage();
+                return Win7Main.streamItems(page.getItems(), MAX_RESULTS);
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    List<StreamInfoItem> items = this.get();
+                    Win7Main.this.resultModel.clear();
+                    Win7Main.this.rememberChannels(items);
+                    for (StreamInfoItem item : items) {
+                        Win7Main.this.resultModel.addElement(item);
+                    }
+                    Win7Main.this.statusLabel.setText(items.size() + " videos populares cargados.");
+                    Win7Main.this.sectionTitle.setText("TENDENCIAS EN YOUTUBE");
+                } catch (Exception exception) {
+                    Win7Main.this.showFailure("No se pudieron cargar tendencias", exception);
                 } finally {
                     Win7Main.this.setBusy(false, Win7Main.this.statusLabel.getText());
                 }
@@ -560,14 +601,11 @@ public final class Win7Main extends JFrame {
         this.refreshChannelRecommendations();
 
         if (recentSearches.isEmpty()) {
-            this.resultModel.clear();
-            this.sectionTitle.setText("RECOMENDADOS PARA TI");
-            this.loadMoreButton.setVisible(false);
-            this.statusLabel.setText("Escribe una búsqueda para empezar.");
+            this.loadTrendingVideos();
             return;
         }
 
-        this.setBusy(true, "Cargando recomendados...");
+        this.setBusy(true, "Cargando sugerencias...");
         this.loadMoreButton.setVisible(false);
         new SwingWorker<RecommendationResults, Void>() {
             @Override
@@ -593,6 +631,10 @@ public final class Win7Main extends JFrame {
                 try {
                     RecommendationResults res = this.get();
                     Win7Main.this.resultModel.clear();
+                    if (res.items.isEmpty()) {
+                        Win7Main.this.loadTrendingVideos();
+                        return;
+                    }
                     Win7Main.this.rememberChannels(res.items);
                     for (StreamInfoItem item : res.items) {
                         Win7Main.this.resultModel.addElement(item);
@@ -601,7 +643,7 @@ public final class Win7Main extends JFrame {
                     Win7Main.this.nextPage = res.nextPage;
                     Win7Main.this.recommendationsMode = true;
                     Win7Main.this.statusLabel.setText(res.items.size() + " videos recomendados.");
-                    Win7Main.this.sectionTitle.setText("RECOMENDADOS PARA TI (Búsquedas recientes)");
+                    Win7Main.this.sectionTitle.setText("RECOMENDADOS PARA TI");
                     Win7Main.this.updateLoadMoreButton();
                     Win7Main.this.refreshChannelRecommendations();
                 } catch (Exception exception) {
@@ -675,6 +717,7 @@ public final class Win7Main extends JFrame {
         this.setBusy(true, "Abriendo canal...");
         this.loadMoreButton.setVisible(false);
         this.viewChannelButton.setVisible(false);
+        this.playButton.setEnabled(false);
 
         new SwingWorker<ChannelResults, Void>() {
             @Override
@@ -736,6 +779,7 @@ public final class Win7Main extends JFrame {
         this.resultList.clearSelection();
         this.videoDetailsLabel.setText("Selecciona un video");
         this.viewChannelButton.setVisible(false);
+        this.playButton.setEnabled(false);
         this.statusLabel.setText(this.resultModel.size() + " resultados restaurados.");
         this.sectionTitle.setText(this.recommendationsMode ? "RECOMENDADOS PARA TI" : "RESULTADOS DE BÚSQUEDA");
         this.updateLoadMoreButton();
@@ -747,6 +791,7 @@ public final class Win7Main extends JFrame {
         this.resultList.clearSelection();
         this.videoDetailsLabel.setText("Selecciona un video");
         this.viewChannelButton.setVisible(false);
+        this.playButton.setEnabled(false);
         this.infoCache.clear();
         this.loadRecentRecommendations();
     }
@@ -879,7 +924,6 @@ public final class Win7Main extends JFrame {
                 boolean isAudioOnly = Win7Main.this.audioOnlyCheckBox.isSelected();
 
                 if (isAudioOnly) {
-                    // Modo solo audio: consume <3% CPU en Atom N455
                     AudioStream audio = streamInfo.getAudioStreams().stream()
                         .max(Comparator.comparingInt(AudioStream::getAverageBitrate))
                         .orElse(null);
@@ -910,8 +954,15 @@ public final class Win7Main extends JFrame {
                     return new PlaybackTarget(video.getContent(), video.getResolution(), streamInfo, false);
                 }
 
-                // Fallback 2: Pasar la URL directa de YouTube a VLC (VLC usa su parser interno .lua)
-                return new PlaybackTarget(item.getUrl(), "Stream Directo VLC", streamInfo, false);
+                // Fallback 2: Stream de audio de alta fidelidad si no hay video progresivo
+                AudioStream audioFallback = streamInfo.getAudioStreams().stream()
+                    .max(Comparator.comparingInt(AudioStream::getAverageBitrate))
+                    .orElse(null);
+                if (audioFallback != null) {
+                    return new PlaybackTarget(audioFallback.getContent(), "Audio Directo", streamInfo, true);
+                }
+
+                throw new IOException("No se encontró stream compatible de YouTube.");
             }
 
             @Override
@@ -930,7 +981,6 @@ public final class Win7Main extends JFrame {
                         }
                     }
 
-                    // Detener instancia anterior de VLC para no saturar memoria en Canaima
                     if (Win7Main.this.activePlayerProcess != null && Win7Main.this.activePlayerProcess.isAlive()) {
                         Win7Main.this.activePlayerProcess.destroy();
                     }
@@ -965,8 +1015,10 @@ public final class Win7Main extends JFrame {
         if (item == null) {
             this.videoDetailsLabel.setText("Selecciona un video");
             this.viewChannelButton.setVisible(false);
+            this.playButton.setEnabled(false);
             return;
         }
+        this.playButton.setEnabled(true);
         this.viewChannelButton.setVisible(item.getUploaderUrl() != null && !item.getUploaderUrl().trim().isEmpty());
         this.videoDetailsLabel.setText("Cargando detalles de " + (item.getUploaderName() == null ? "video" : item.getUploaderName()) + "...");
 
@@ -1042,8 +1094,10 @@ public final class Win7Main extends JFrame {
             if (Files.isRegularFile(p)) return p;
         }
         String[] common = new String[]{
-            "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
             "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
+            "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+            "E:\\portable\\vlc\\vlc.exe",
+            "D:\\portable\\vlc\\vlc.exe",
             "C:\\VLC\\vlc.exe"
         };
         for (String c : common) {
@@ -1058,6 +1112,7 @@ public final class Win7Main extends JFrame {
         this.searchField.setEnabled(!busy);
         this.resultList.setEnabled(!busy);
         this.viewChannelButton.setEnabled(!busy);
+        this.playButton.setEnabled(!busy && this.resultList.getSelectedValue() != null);
         this.backToResultsButton.setEnabled(!busy);
         this.homeButton.setEnabled(!busy);
         if (busy) this.loadMoreButton.setEnabled(false);
@@ -1065,9 +1120,21 @@ public final class Win7Main extends JFrame {
     }
 
     private void showFailure(String message, Exception exception) {
-        Throwable cause = exception.getCause() == null ? exception : exception.getCause();
-        String detail = cause.getLocalizedMessage() == null ? cause.getClass().getSimpleName() : cause.getLocalizedMessage();
+        Throwable cause = exception;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        String detail = cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();
         this.statusLabel.setText(message + ": " + detail);
+
+        // Guardar detalle en archivo para soporte y auditoría
+        try (PrintWriter pw = new PrintWriter(new FileWriter("error_debug.log", true))) {
+            pw.println("=== " + new Date() + " : " + message + " ===");
+            cause.printStackTrace(pw);
+            pw.println();
+        } catch (Exception ignored) {}
+
+        JOptionPane.showMessageDialog(this, message + "\n\nDetalle: " + detail, "Aviso del Sistema", JOptionPane.WARNING_MESSAGE);
     }
 
     private static String formatDuration(long seconds) {
@@ -1086,9 +1153,6 @@ public final class Win7Main extends JFrame {
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
-    /**
-     * Prioriza URLs JPEG estándar de YouTube para evitar problemas de decodificación WebP en JVM sin plugins externos.
-     */
     private List<String> thumbnailUrls(StreamInfoItem item) {
         List<String> urls = new ArrayList<>();
         String videoId = youtubeVideoId(item.getUrl());
@@ -1201,7 +1265,6 @@ public final class Win7Main extends JFrame {
                 BufferedImage decoded = reader.read(0, param);
                 if (decoded == null) throw new IOException("Fallo de decodificación");
 
-                // Redimensionar al tamaño compacto Canaima (120x68)
                 BufferedImage thumb = new BufferedImage(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, BufferedImage.TYPE_INT_RGB);
                 Graphics2D g = thumb.createGraphics();
                 g.setColor(HEADER_COLOR);
@@ -1278,7 +1341,7 @@ public final class Win7Main extends JFrame {
         public Thread newThread(Runnable r) {
             Thread t = new Thread(r, "newpipe-thumb-loader");
             t.setDaemon(true);
-            t.setPriority(Thread.MIN_PRIORITY); // Prioridad mínima para no ahogar al Atom
+            t.setPriority(Thread.MIN_PRIORITY);
             return t;
         }
     }
@@ -1345,13 +1408,9 @@ public final class Win7Main extends JFrame {
         }
     }
 
-    /**
-     * Renderizador de tarjeta compacto (120x68) con badge de duración.
-     */
     private final class ResultCellRenderer extends JPanel implements ListCellRenderer<StreamInfoItem> {
         private final JLabel thumbLabel = new JLabel();
         private final JLabel textLabel = new JLabel();
-        private String currentDuration = "";
 
         private ResultCellRenderer() {
             super(new BorderLayout(10, 0));
@@ -1367,7 +1426,6 @@ public final class Win7Main extends JFrame {
         public Component getListCellRendererComponent(JList<? extends StreamInfoItem> list, StreamInfoItem item, int index, boolean isSelected, boolean cellHasFocus) {
             String uploader = item.getUploaderName() == null ? "Canal desconocido" : item.getUploaderName();
             String duration = Win7Main.formatDuration(item.getDuration());
-            this.currentDuration = duration;
 
             this.textLabel.setText(
                 "<html><body style='padding: 2px 0;'>" +
@@ -1382,7 +1440,6 @@ public final class Win7Main extends JFrame {
             BufferedImage img = url == null ? null : Win7Main.this.getCachedThumbnail(url);
 
             if (img != null) {
-                // Agregar etiqueta de duración en la esquina inferior derecha de la miniatura
                 BufferedImage decorated = new BufferedImage(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, BufferedImage.TYPE_INT_RGB);
                 Graphics2D g = decorated.createGraphics();
                 g.drawImage(img, 0, 0, null);
