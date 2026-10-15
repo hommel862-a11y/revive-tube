@@ -214,6 +214,7 @@ public final class Win7Main extends JFrame {
     }
 
     public static void main(String[] args) {
+        SslHelper.installPermissiveSsl();
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -1221,6 +1222,11 @@ public final class Win7Main extends JFrame {
             throw new IOException("Solo se permite HTTPS");
         }
         HttpURLConnection conn = (HttpURLConnection) new URL(imageUrl).openConnection();
+        if (conn instanceof javax.net.ssl.HttpsURLConnection) {
+            javax.net.ssl.HttpsURLConnection https = (javax.net.ssl.HttpsURLConnection) conn;
+            https.setSSLSocketFactory(SslHelper.getSocketFactory());
+            https.setHostnameVerifier(SslHelper.getHostnameVerifier());
+        }
         try {
             conn.setConnectTimeout(6000);
             conn.setReadTimeout(8000);

@@ -38,8 +38,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+if exist "%~dp0desktopApp 0.8\lib" (
+    copy /y "%LIB_DIR%\desktopApp.jar" "%~dp0desktopApp 0.8\lib\desktopApp.jar" >nul
+)
+if exist "%~dp0desktopApp 0.8" (
+    copy /y "%LIB_DIR%\desktopApp.jar" "%~dp0desktopApp 0.8\desktopApp.jar" >nul
+)
+
 echo.
 echo ==============================================
-echo Compilacion exitosa: %LIB_DIR%\desktopApp.jar
+echo Compilacion exitosa: %LIB_DIR%\desktopApp.jar y desktopApp 0.8\
 echo ==============================================
 exit /b 0

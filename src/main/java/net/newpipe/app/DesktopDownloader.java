@@ -35,6 +35,7 @@ extends Downloader {
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0";
 
     DesktopDownloader() {
+        SslHelper.installPermissiveSsl();
     }
 
     /*
@@ -42,6 +43,11 @@ extends Downloader {
      */
     public Response execute(Request request) throws IOException, ReCaptchaException {
         HttpURLConnection connection = (HttpURLConnection)new URL(request.url()).openConnection();
+        if (connection instanceof javax.net.ssl.HttpsURLConnection) {
+            javax.net.ssl.HttpsURLConnection https = (javax.net.ssl.HttpsURLConnection) connection;
+            https.setSSLSocketFactory(SslHelper.getSocketFactory());
+            https.setHostnameVerifier(SslHelper.getHostnameVerifier());
+        }
         try {
             int statusCode;
             connection.setConnectTimeout(15000);
