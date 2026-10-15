@@ -1,0 +1,18 @@
+# Pre-existing beta releases to avoid bloating repo (>700MB)
+/desktopApp 0.*/
+runtime/
+*.zip
+*.7z
+*.tar.gz
+
+# Build output directories and classes
+/build/
+*.class
+
+# Temporary logs & OS artifacts
+*.log
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+.vscode/
